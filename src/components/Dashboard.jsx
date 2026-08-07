@@ -1,42 +1,83 @@
-const SUMMARY_CARDS = [
-  { label: "QSFI", value: "233.90" },
-  { label: "Best Qubit", value: "Q3" },
-  { label: "Average T1", value: "146.10 μs" },
-  { label: "Average T2", value: "104.41 μs" },
-];
+import { useMemo } from "react";
+import { useQuantumData } from "../hooks/useQuantumData";
+import { useTableFilters } from "../hooks/useTableFilters";
+import { usePagination } from "../hooks/usePagination";
+import { useQubitPredictions } from "../hooks/useQubitPredictions";
+import { useQubitDetailsPanel } from "../hooks/useQubitDetailsPanel";
+import {
+  computeQsfiDistribution,
+  computeQubitScatterData,
+  computeStabilityDistribution,
+} from "../utils/dashboardCalculations";
+import { CHART_COLORS, SUMMARY_LABELS } from "../utils/constants";
+import SummaryCards from "./dashboard/SummaryCards";
+import ResearchInsights from "./dashboard/ResearchInsights";
+import PredictionSection from "./dashboard/PredictionSection";
+import FilterBar from "./dashboard/FilterBar";
+import QubitTable from "./dashboard/QubitTable";
+import Pagination from "./dashboard/Pagination";
+import QubitDetailsPanel from "./dashboard/QubitDetailsPanel";
 
-const ANALYSIS_ROWS = [
-  {
-    timestamp: "2026-07-21 09:42",
-    backend: "IBM Fez",
-    qubit: "Q3",
-    fidelity: "99.2%",
-    status: "Stable",
-  },
-  {
-    timestamp: "2026-07-21 08:15",
-    backend: "IBM Fez",
-    qubit: "Q7",
-    fidelity: "97.8%",
-    status: "Stable",
-  },
-  {
-    timestamp: "2026-07-20 22:03",
-    backend: "IBM Fez",
-    qubit: "Q1",
-    fidelity: "94.5%",
-    status: "Degrading",
-  },
-  {
-    timestamp: "2026-07-20 19:47",
-    backend: "IBM Fez",
-    qubit: "Q5",
-    fidelity: "98.9%",
-    status: "Stable",
-  },
-];
-
+/**
+ * Top-level Dashboard page. This component only wires data (via custom
+ * hooks) to layout - all calculations live in src/utils, and every visual
+ * piece is its own component under src/components/dashboard.
+ */
 function Dashboard() {
+  const { summary, allRecords, trendData, isLoading } = useQuantumData();
+
+  const {
+    dayFilter,
+    setDayFilter,
+    statusFilter,
+    setStatusFilter,
+    qubitSearch,
+    setQubitSearch,
+    sortField,
+    setSortField,
+    sortDirection,
+    setSortDirection,
+    dayOptions,
+    filteredRows,
+  } = useTableFilters(allRecords);
+
+  const {
+    rowsPerPage,
+    setRowsPerPage,
+    setCurrentPage,
+    totalPages,
+    safePage,
+    paginatedRows,
+    pageNumbers,
+  } = usePagination(filteredRows, [
+    dayFilter,
+    statusFilter,
+    qubitSearch,
+    sortField,
+    sortDirection,
+  ]);
+
+  const stabilityDistribution = useMemo(
+    () => computeStabilityDistribution(allRecords, CHART_COLORS),
+    [allRecords]
+  );
+
+  const qsfiDistribution = useMemo(
+    () => computeQsfiDistribution(allRecords),
+    [allRecords]
+  );
+
+  const qubitScatterData = useMemo(
+    () => computeQubitScatterData(allRecords),
+    [allRecords]
+  );
+
+  const { qubitPredictions, predictionSummary, predictionChartData } =
+    useQubitPredictions(allRecords, trendData);
+
+  const { selectedQubitDetails, isPanelOpen, openQubitPanel, closeQubitPanel } =
+    useQubitDetailsPanel(allRecords);
+
   return (
     <section className="dashboard" id="dashboard">
       <div className="dashboard-heading">
@@ -44,82 +85,58 @@ function Dashboard() {
         <p>A live-style snapshot of qubit fidelity across IBM Quantum backends.</p>
       </div>
 
-      <div className="dashboard-summary">
-        {SUMMARY_CARDS.map((card) => (
-          <div className="summary-card" key={card.label}>
-            <span className="summary-label">{card.label}</span>
-            <span className="summary-value">{card.value}</span>
-          </div>
-        ))}
-      </div>
+      <SummaryCards labels={SUMMARY_LABELS} values={summary} />
 
-      <div className="dashboard-graph-panel">
-        <div className="graph-panel-header">
-          <h3>Fidelity Trends</h3>
-          <span className="graph-badge">Live Analytics · Coming Soon</span>
-        </div>
+      <ResearchInsights
+        trendData={trendData}
+        qsfiDistribution={qsfiDistribution}
+        stabilityDistribution={stabilityDistribution}
+        qubitScatterData={qubitScatterData}
+        isLoading={isLoading}
+      />
 
-        <div className="graph-canvas">
-          <svg
-            className="graph-svg"
-            viewBox="0 0 600 200"
-            preserveAspectRatio="none"
-          >
-            <defs>
-              <linearGradient id="trendGradient" x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor="#00b4ff" />
-                <stop offset="100%" stopColor="#8b5cf6" />
-              </linearGradient>
-            </defs>
-
-            <polyline
-              className="trend-line"
-              fill="none"
-              stroke="url(#trendGradient)"
-              strokeWidth="3"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              points="0,150 80,132 160,142 240,92 320,110 400,62 480,80 560,42 600,55"
-            />
-
-            <circle className="trend-point" cx="600" cy="55" r="6" />
-          </svg>
-        </div>
-      </div>
+      <PredictionSection
+        predictionSummary={predictionSummary}
+        predictionChartData={predictionChartData}
+        qubitPredictions={qubitPredictions}
+      />
 
       <div className="dashboard-table-section">
-        <h3>Recent Quantum Analysis</h3>
-        <div className="dashboard-table-wrapper">
-          <table className="dashboard-table">
-            <thead>
-              <tr>
-                <th>Timestamp</th>
-                <th>Backend</th>
-                <th>Qubit</th>
-                <th>Fidelity</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {ANALYSIS_ROWS.map((row) => (
-                <tr key={row.timestamp + row.qubit}>
-                  <td>{row.timestamp}</td>
-                  <td>{row.backend}</td>
-                  <td>{row.qubit}</td>
-                  <td>{row.fidelity}</td>
-                  <td>
-                    <span
-                      className={`status-badge status-${row.status.toLowerCase()}`}
-                    >
-                      {row.status}
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <h3>Qubit Readings</h3>
+
+        <FilterBar
+          dayFilter={dayFilter}
+          onDayFilterChange={setDayFilter}
+          statusFilter={statusFilter}
+          onStatusFilterChange={setStatusFilter}
+          qubitSearch={qubitSearch}
+          onQubitSearchChange={setQubitSearch}
+          sortField={sortField}
+          onSortFieldChange={setSortField}
+          sortDirection={sortDirection}
+          onSortDirectionChange={setSortDirection}
+          dayOptions={dayOptions}
+          filteredCount={filteredRows.length}
+          totalCount={allRecords.length}
+        />
+
+        <QubitTable rows={paginatedRows} onRowClick={openQubitPanel} />
+
+        <Pagination
+          rowsPerPage={rowsPerPage}
+          onRowsPerPageChange={setRowsPerPage}
+          pageNumbers={pageNumbers}
+          safePage={safePage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+        />
       </div>
+
+      <QubitDetailsPanel
+        details={selectedQubitDetails}
+        isOpen={isPanelOpen}
+        onClose={closeQubitPanel}
+      />
     </section>
   );
 }
