@@ -17,6 +17,7 @@ import FilterBar from "./dashboard/FilterBar";
 import QubitTable from "./dashboard/QubitTable";
 import Pagination from "./dashboard/Pagination";
 import QubitDetailsPanel from "./dashboard/QubitDetailsPanel";
+import AnalysisUploadPanel from "./dashboard/AnalysisUploadPanel";
 
 /**
  * Top-level Dashboard page. This component only wires data (via custom
@@ -131,6 +132,8 @@ function Dashboard() {
           onPageChange={setCurrentPage}
         />
       </div>
+
+      <AnalysisUploadPanel />
 
       <QubitDetailsPanel
         details={selectedQubitDetails}

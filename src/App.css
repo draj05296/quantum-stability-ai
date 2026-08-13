@@ -1217,3 +1217,175 @@ html{
     width:100%;
   }
 }
+/* ---------------------------------------------------------------------------
+   AI engine CSV upload panel (POST /analyze)
+   --------------------------------------------------------------------------- */
+
+.analysis-upload-section{
+  margin-top:60px;
+  text-align:left;
+}
+
+.analysis-upload-heading{
+  margin-bottom:24px;
+}
+
+.analysis-upload-heading h3{
+  color:#ffffff;
+  font-size:20px;
+  margin-bottom:8px;
+}
+
+.analysis-upload-heading p{
+  color:#9ca3af;
+  font-size:15px;
+  max-width:640px;
+  line-height:1.6;
+}
+
+.analysis-upload-form{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:flex-end;
+  gap:20px;
+  padding:20px 24px;
+  background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:16px;
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+}
+
+.analysis-upload-form input[type="file"]{
+  min-width:260px;
+  cursor:pointer;
+}
+
+.analysis-upload-form input[type="file"]::file-selector-button{
+  margin-right:12px;
+  padding:6px 14px;
+  border:1px solid rgba(255,255,255,.15);
+  border-radius:8px;
+  background:rgba(255,255,255,.06);
+  color:#e2e8f0;
+  font-size:13px;
+  cursor:pointer;
+  transition:border-color .3s ease, background .3s ease;
+}
+
+.analysis-upload-form input[type="file"]::file-selector-button:hover{
+  border-color:rgba(0,180,255,.5);
+  background:rgba(0,180,255,.12);
+}
+
+.analysis-upload-actions{
+  display:flex;
+  gap:12px;
+}
+
+.analysis-upload-button{
+  padding:11px 24px;
+  border:1px solid rgba(0,180,255,.4);
+  border-radius:10px;
+  background:linear-gradient(90deg,rgba(0,180,255,.18),rgba(139,92,246,.18));
+  color:#e2e8f0;
+  font-size:14px;
+  font-weight:600;
+  cursor:pointer;
+  transition:transform .3s ease, border-color .3s ease, box-shadow .3s ease;
+}
+
+.analysis-upload-button:hover:not(:disabled){
+  transform:translateY(-2px);
+  border-color:rgba(0,180,255,.7);
+  box-shadow:0 0 20px rgba(139,92,246,.25);
+}
+
+.analysis-upload-button:disabled{
+  opacity:.45;
+  cursor:not-allowed;
+}
+
+.analysis-upload-button-secondary{
+  border-color:rgba(255,255,255,.15);
+  background:rgba(255,255,255,.05);
+}
+
+.analysis-upload-button-secondary:hover:not(:disabled){
+  border-color:rgba(255,255,255,.3);
+  box-shadow:none;
+}
+
+.analysis-upload-status{
+  margin-top:18px;
+  font-size:14px;
+  color:#9ca3af;
+}
+
+.analysis-upload-status strong{
+  color:#e2e8f0;
+}
+
+.analysis-upload-status code{
+  padding:2px 8px;
+  border-radius:6px;
+  background:rgba(255,255,255,.06);
+  color:#00b4ff;
+  font-size:13px;
+}
+
+.analysis-upload-error{
+  margin-top:18px;
+  padding:14px 18px;
+  border:1px solid rgba(248,113,113,.3);
+  border-radius:12px;
+  background:rgba(248,113,113,.1);
+  color:#f87171;
+  font-size:14px;
+}
+
+.analysis-upload-result .dashboard-summary{
+  margin-top:20px;
+}
+
+.analysis-quality-list{
+  display:flex;
+  flex-wrap:wrap;
+  gap:12px;
+  margin-top:20px;
+  padding:0;
+  list-style:none;
+}
+
+.analysis-quality-list li{
+  display:flex;
+  flex-direction:column;
+  gap:6px;
+  padding:14px 18px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:12px;
+  background:rgba(255,255,255,.03);
+}
+
+.analysis-quality-label{
+  font-size:11px;
+  letter-spacing:.5px;
+  text-transform:uppercase;
+  color:#9ca3af;
+}
+
+.analysis-quality-value{
+  font-size:18px;
+  font-weight:600;
+  color:#e2e8f0;
+}
+
+@media (max-width:600px){
+  .analysis-upload-actions{
+    width:100%;
+  }
+
+  .analysis-upload-button{
+    flex:1;
+  }
+}
