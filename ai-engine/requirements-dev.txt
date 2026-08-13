@@ -2,3 +2,5 @@
 #   pip install -r requirements-dev.txt
 -r requirements.txt
 pytest==8.4.2
+# Required by fastapi.testclient.TestClient (used in tests/test_endpoints.py).
+httpx==0.28.1

@@ -29,3 +29,17 @@ def generate_unique_filename(original_filename: str, extension: str = ".csv") ->
     safe_stem = safe_stem or "upload"
 
     return f"{timestamp}_{unique_id}_{safe_stem}{extension}"
+
+
+def resolve_safe_path(base_dir: str, filename: str) -> Path:
+    """
+    Joins `filename` onto `base_dir` and guarantees the result can't escape
+    it (e.g. via "../" segments). Raises ValueError if it would.
+    """
+    base = Path(base_dir).resolve()
+    candidate = (base / filename).resolve()
+
+    if candidate != base and base not in candidate.parents:
+        raise ValueError(f"Invalid filename: {filename!r}")
+
+    return candidate

@@ -27,3 +27,154 @@ class ErrorResponse(BaseModel):
     """Standard error body returned for 4xx/5xx responses."""
 
     detail: str
+
+
+class QubitResult(BaseModel):
+    """A single qubit's computed QSFI and stability status."""
+
+    qubit: int
+    t1: float
+    t2: float
+    qsfi: float
+    status: str
+
+
+class BestWorstQubit(BaseModel):
+    qubit: int
+    qsfi: float
+
+
+class AnalysisSummary(BaseModel):
+    total_qubits: int
+    average_t1: float
+    average_t2: float
+    average_qsfi: float
+    best_qubit: BestWorstQubit
+    worst_qubit: BestWorstQubit
+
+
+class DataQuality(BaseModel):
+    """Bookkeeping on how the raw upload was cleaned before analysis."""
+
+    rows_received: int
+    duplicate_rows_removed: int
+    missing_values: dict[str, int]
+    rows_with_missing_values_dropped: int
+    rows_analyzed: int
+
+
+class AnalyzeResponse(BaseModel):
+    """Response returned by POST /analyze: services.analyzer's output plus upload/persistence metadata."""
+
+    success: bool
+    filename: str = Field(..., description="The unique filename the source CSV was saved as under uploads/.")
+    processed_filename: str = Field(..., description="The filename this analysis was saved as under processed/.")
+    analyzed_at: str = Field(..., description="UTC timestamp (ISO 8601) the analysis was run and saved.")
+    summary: AnalysisSummary
+    data_quality: DataQuality
+    qubits: list[QubitResult]
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "success": True,
+                "filename": "20260805_143022_a1b2c3d4_quantum_data_day1.csv",
+                "processed_filename": "20260805_143022_a1b2c3d4_quantum_data_day1.json",
+                "analyzed_at": "2026-08-05T14:30:22.123456+00:00",
+                "summary": {
+                    "total_qubits": 155,
+                    "average_t1": 0.00014699268600843761,
+                    "average_t2": 0.00010441423661321995,
+                    "average_qsfi": 0.00012570346131082877,
+                    "best_qubit": {"qubit": 3, "qsfi": 0.0002338952681221},
+                    "worst_qubit": {"qubit": 149, "qsfi": 3.519222175082278e-05},
+                },
+                "data_quality": {
+                    "rows_received": 156,
+                    "duplicate_rows_removed": 0,
+                    "missing_values": {"Qubit": 0, "T1": 0, "T2": 1},
+                    "rows_with_missing_values_dropped": 1,
+                    "rows_analyzed": 155,
+                },
+                "qubits": [
+                    {"qubit": 3, "t1": 0.00020176728056747127, "t2": 0.0002660232556767287, "qsfi": 0.0002338952681221, "status": "Stable"},
+                ],
+            }
+        }
+    }
+
+
+class AnalysisHistoryEntry(BaseModel):
+    """One saved analysis, as listed by GET /history."""
+
+    filename: str = Field(..., description="Filename of the saved analysis under processed/.")
+    analyzed_at: str = Field(..., description="UTC timestamp (ISO 8601) the analysis was run and saved.")
+
+
+class HistoryResponse(BaseModel):
+    """Response returned by GET /history."""
+
+    count: int
+    analyses: list[AnalysisHistoryEntry]
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "count": 2,
+                "analyses": [
+                    {
+                        "filename": "20260806_090000_bb11cc22_quantum_data_day2.json",
+                        "analyzed_at": "2026-08-06T09:00:00.000000+00:00",
+                    },
+                    {
+                        "filename": "20260805_143022_a1b2c3d4_quantum_data_day1.json",
+                        "analyzed_at": "2026-08-05T14:30:22.123456+00:00",
+                    },
+                ],
+            }
+        }
+    }
+
+
+class AnalysisReference(BaseModel):
+    """Points back to which uploaded file and timestamp a compared analysis came from."""
+
+    filename: str | None
+    analyzed_at: str | None
+
+
+class QsfiChange(BaseModel):
+    previous: float
+    latest: float
+    difference: float
+    percent_change: float
+
+
+class QubitQsfiChange(BaseModel):
+    qubit: int
+    previous_qsfi: float
+    latest_qsfi: float
+    difference: float
+
+
+class QubitStatusChange(BaseModel):
+    qubit: int
+    previous_status: str
+    latest_status: str
+
+
+class CompareLatestResponse(BaseModel):
+    """Response returned by GET /compare/latest."""
+
+    previous: AnalysisReference
+    latest: AnalysisReference
+    qubits_compared: int = Field(..., description="Number of qubits present in both analyses and compared.")
+    average_qsfi_change: QsfiChange
+    improved_qubits: list[QubitQsfiChange]
+    degraded_qubits: list[QubitQsfiChange]
+    newly_stable_qubits: list[QubitStatusChange] = Field(
+        ..., description="Qubits that were Degrading in the previous analysis and are Stable in the latest."
+    )
+    newly_unstable_qubits: list[QubitStatusChange] = Field(
+        ..., description="Qubits that were Stable in the previous analysis and are Degrading in the latest."
+    )

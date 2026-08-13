@@ -12,7 +12,27 @@ from utils.file_utils import generate_unique_filename
 async def save_and_inspect_csv(file: UploadFile) -> dict:
     """
     Validates an uploaded CSV, saves it to `settings.UPLOAD_DIR` under a
-    unique filename, and reads it with pandas to report its shape.
+    unique filename, and reads it with pandas to report its shape. Backs
+    the /upload endpoint.
+    """
+    filename, dataframe = await save_and_load_csv(file)
+
+    return {
+        "success": True,
+        "filename": filename,
+        "rows": int(dataframe.shape[0]),
+        "columns": dataframe.columns.tolist(),
+    }
+
+
+async def save_and_load_csv(file: UploadFile) -> tuple[str, pd.DataFrame]:
+    """
+    Validates an uploaded CSV, saves it to `settings.UPLOAD_DIR` under a
+    unique filename, and loads it into a DataFrame.
+
+    This is the shared validate -> save -> parse step used by any endpoint
+    that needs both the file on disk and its parsed contents (currently
+    /upload and /analyze), so that logic only lives in one place.
 
     Raises HTTPException(400) for anything wrong with the upload itself
     (extension, size, unparseable content) and HTTPException(500) if saving
@@ -25,9 +45,14 @@ async def save_and_inspect_csv(file: UploadFile) -> dict:
 
     filename = generate_unique_filename(file.filename)
     file_path = _save_file(filename, contents)
+    dataframe = _read_csv(file_path)
 
+    return filename, dataframe
+
+
+def _read_csv(file_path: str) -> pd.DataFrame:
     try:
-        dataframe = pd.read_csv(file_path, encoding="utf-8-sig")
+        return pd.read_csv(file_path, encoding="utf-8-sig")
     except Exception as exc:
         # Don't leave an unreadable file behind in uploads/.
         os.remove(file_path)
@@ -35,13 +60,6 @@ async def save_and_inspect_csv(file: UploadFile) -> dict:
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Uploaded file could not be parsed as CSV: {exc}",
         ) from exc
-
-    return {
-        "success": True,
-        "filename": filename,
-        "rows": int(dataframe.shape[0]),
-        "columns": dataframe.columns.tolist(),
-    }
 
 
 def _validate_extension(filename: str | None) -> None:
