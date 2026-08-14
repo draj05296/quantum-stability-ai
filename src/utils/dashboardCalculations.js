@@ -9,11 +9,20 @@ export function toMicroseconds(seconds) {
   return seconds * SEC_TO_US;
 }
 
+// Minimum readings a qubit needs before a regression forecast is meaningful.
+// A single reading yields a zero-variance fit (R² = 1), which would report
+// 100% confidence from one data point - so those qubits are skipped entirely
+// rather than given a fabricated prediction.
+const MIN_READINGS_FOR_PREDICTION = 2;
+
 // Every "day" value in this dataset is the literal string "Day N" - this is
 // the single place that turns it back into a number, so sorting/lookups by
-// day stay consistent everywhere they're needed.
+// day stay consistent everywhere they're needed. An unparseable label falls
+// back to 0 so a stray value can never poison a sort comparator or an
+// equality lookup with NaN.
 export function getDayNumber(dayLabel) {
-  return Number(dayLabel.replace("Day ", ""));
+  const dayNumber = Number(String(dayLabel).replace("Day ", ""));
+  return Number.isFinite(dayNumber) ? dayNumber : 0;
 }
 
 /**
@@ -202,6 +211,10 @@ export function linearRegression(points) {
  * Fits a linear regression to each qubit's 5-day QSFI history and forecasts
  * day 6, classifying the qubit as Improving/Stable/Degrading based on the
  * expected % change.
+ *
+ * Qubits with fewer than MIN_READINGS_FOR_PREDICTION readings are excluded:
+ * a single-point fit is mathematically degenerate (slope 0, R² 1), so
+ * including them would publish a meaningless forecast at 100% confidence.
  */
 export function computeQubitPredictions(
   allRecords,
@@ -217,6 +230,7 @@ export function computeQubitPredictions(
   });
 
   return Array.from(qubitGroups.entries())
+    .filter(([, points]) => points.length >= MIN_READINGS_FOR_PREDICTION)
     .map(([qubit, points]) => {
       const sortedPoints = [...points].sort((a, b) => a.x - b.x);
       const { slope, intercept, confidence } = linearRegression(sortedPoints);

@@ -9,18 +9,50 @@
 
 import { toMicroseconds } from "./dashboardCalculations";
 
-/** Day label applied to a single uploaded file, which carries no day of its own. */
-export const UPLOADED_DAY_LABEL = "Uploaded";
+/**
+ * One /analyze call covers a single CSV, which carries no day of its own, so
+ * its records are labelled as day 1.
+ *
+ * The label deliberately uses the dashboard's "Day N" format rather than a
+ * free-text word: getDayNumber() parses it with Number(label.replace("Day ",
+ * "")), and anything unparseable would sort day options and match prediction
+ * chart points incorrectly. Passing a different `dayNumber` is what will let
+ * several saved analyses be stitched into one multi-day series later.
+ */
+export const UPLOADED_DAY_NUMBER = 1;
+
+/**
+ * True when `analysis` is a /analyze response complete enough to drive the
+ * dashboard. Guards the fields that are read without optional chaining
+ * downstream, so a partial or errored payload can never be made active.
+ */
+export function isValidAnalysis(analysis) {
+  const summary = analysis?.summary;
+
+  return Boolean(
+    Array.isArray(analysis?.qubits) &&
+      analysis.qubits.length > 0 &&
+      summary &&
+      Number.isFinite(summary.average_t1) &&
+      Number.isFinite(summary.average_t2) &&
+      Number.isFinite(summary.average_qsfi) &&
+      Number.isFinite(summary.total_qubits) &&
+      Number.isFinite(summary.best_qubit?.qubit)
+  );
+}
 
 /**
  * Maps `analysis.qubits` onto the dashboard's canonical record shape:
  * { day, qubit, t1, t2, qsfi, status }.
  *
  * The status is taken straight from the backend (which applies the same
- * "QSFI >= average is Stable" rule as attachStatus) rather than recomputed.
+ * "QSFI >= average is Stable" rule as attachStatus) rather than recomputed -
+ * the backend stays the source of truth for uploaded-file analysis.
  */
-export function mapAnalysisToRecords(analysis, dayLabel = UPLOADED_DAY_LABEL) {
+export function mapAnalysisToRecords(analysis, dayNumber = UPLOADED_DAY_NUMBER) {
   if (!analysis?.qubits) return [];
+
+  const dayLabel = `Day ${dayNumber}`;
 
   return analysis.qubits.map((entry) => ({
     day: dayLabel,
@@ -65,4 +97,30 @@ export function formatDataQualityRows(analysis) {
     { label: "Incomplete rows dropped", value: quality.rows_with_missing_values_dropped },
     { label: "Rows analyzed", value: quality.rows_analyzed },
   ];
+}
+
+/**
+ * Provenance and data-quality facts about an analysis, kept deliberately
+ * separate from the per-qubit records: these describe the dataset as a whole
+ * and must not be mixed into individual rows, which the dashboard's
+ * calculations iterate over.
+ *
+ * `averageQsfi` is converted to microseconds for display consistency; every
+ * other field is passed through as the backend reported it.
+ */
+export function extractAnalysisMetadata(analysis) {
+  if (!analysis) return null;
+
+  const quality = analysis.data_quality ?? {};
+
+  return {
+    filename: analysis.filename ?? null,
+    processedFilename: analysis.processed_filename ?? null,
+    analyzedAt: analysis.analyzed_at ?? null,
+    rowsReceived: quality.rows_received ?? null,
+    rowsAnalyzed: quality.rows_analyzed ?? null,
+    rowsWithMissingValuesDropped: quality.rows_with_missing_values_dropped ?? null,
+    duplicateRowsRemoved: quality.duplicate_rows_removed ?? null,
+    averageQsfi: analysis.summary ? toMicroseconds(analysis.summary.average_qsfi) : null,
+  };
 }

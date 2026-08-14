@@ -1389,3 +1389,28 @@ html{
     flex:1;
   }
 }
+
+/* Active-data-source banner + the promote/reset controls in the upload panel */
+
+.dashboard-active-source{
+  margin-top:10px;
+  font-size:14px;
+  color:#00b4ff;
+}
+
+.dashboard-active-source strong{
+  color:#e2e8f0;
+}
+
+.analysis-source-actions{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  gap:14px;
+  margin-top:18px;
+}
+
+.analysis-source-active{
+  font-size:14px;
+  color:#34d399;
+}

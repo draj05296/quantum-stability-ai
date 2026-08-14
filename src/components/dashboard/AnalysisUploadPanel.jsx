@@ -1,5 +1,4 @@
 import { useCallback, useRef, useState } from "react";
-import { useAnalyzeUpload } from "../../hooks/useAnalyzeUpload";
 import {
   formatAnalysisSummaryValues,
   formatDataQualityRows,
@@ -8,17 +7,26 @@ import { SUMMARY_LABELS } from "../../utils/constants";
 import SummaryCards from "./SummaryCards";
 
 /**
- * Uploads a CSV to the AI engine's POST /analyze endpoint and renders the
- * result.
+ * Uploads a CSV to the AI engine's POST /analyze endpoint, renders the
+ * result, and offers to promote that result to the dashboard's active
+ * dataset.
  *
- * The dashboard above still runs entirely on the bundled CSVs - this panel is
- * the backend-powered path alongside it, and reuses <SummaryCards /> so an
- * API-computed summary looks identical to the local one.
+ * This component is controlled: the upload request state lives in Dashboard
+ * (via useAnalyzeUpload) so the analysis can also feed the dashboard's data
+ * pipeline. Everything here is presentation plus local file-input state.
  */
-function AnalysisUploadPanel() {
-  const { isLoading, analysis, error, analyzedFileName, analyzeFile, reset } =
-    useAnalyzeUpload();
-
+function AnalysisUploadPanel({
+  isAnalyzing,
+  analysis,
+  error,
+  analyzedFileName,
+  onAnalyzeFile,
+  onClear,
+  isActiveDataSource,
+  canActivate,
+  onUseAsDashboardData,
+  onResetToSampleData,
+}) {
   const [selectedFile, setSelectedFile] = useState(null);
   const fileInputRef = useRef(null);
 
@@ -29,16 +37,16 @@ function AnalysisUploadPanel() {
   const handleSubmit = useCallback(
     (event) => {
       event.preventDefault();
-      analyzeFile(selectedFile);
+      onAnalyzeFile(selectedFile);
     },
-    [analyzeFile, selectedFile]
+    [onAnalyzeFile, selectedFile]
   );
 
   const handleClear = useCallback(() => {
     setSelectedFile(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
-    reset();
-  }, [reset]);
+    onClear();
+  }, [onClear]);
 
   const summaryValues = formatAnalysisSummaryValues(analysis);
   const dataQualityRows = formatDataQualityRows(analysis);
@@ -49,8 +57,8 @@ function AnalysisUploadPanel() {
         <h3>Analyze a CSV with the AI Engine</h3>
         <p>
           Upload a calibration CSV (columns: Qubit, T1, T2) to the QSFI AI engine.
-          The backend cleans the data and computes the summary below. The charts
-          and table above continue to use the bundled sample data.
+          The backend cleans the data and computes the summary below, which you
+          can then load into the dashboard above.
         </p>
       </div>
 
@@ -63,7 +71,7 @@ function AnalysisUploadPanel() {
             type="file"
             accept=".csv,text/csv"
             onChange={handleFileChange}
-            disabled={isLoading}
+            disabled={isAnalyzing}
           />
         </div>
 
@@ -71,23 +79,23 @@ function AnalysisUploadPanel() {
           <button
             type="submit"
             className="analysis-upload-button"
-            disabled={!selectedFile || isLoading}
+            disabled={!selectedFile || isAnalyzing}
           >
-            {isLoading ? "Analyzing…" : "Analyze"}
+            {isAnalyzing ? "Analyzing…" : "Analyze"}
           </button>
 
           <button
             type="button"
             className="analysis-upload-button analysis-upload-button-secondary"
             onClick={handleClear}
-            disabled={isLoading || (!selectedFile && !analysis && !error)}
+            disabled={isAnalyzing || (!selectedFile && !analysis && !error)}
           >
             Clear
           </button>
         </div>
       </form>
 
-      {isLoading && (
+      {isAnalyzing && (
         <p className="analysis-upload-status" role="status">
           Uploading and analyzing…
         </p>
@@ -99,12 +107,38 @@ function AnalysisUploadPanel() {
         </p>
       )}
 
-      {analysis && !isLoading && (
+      {analysis && !isAnalyzing && (
         <div className="analysis-upload-result">
           <p className="analysis-upload-status">
             Analyzed <strong>{analyzedFileName}</strong> — saved as{" "}
             <code>{analysis.processed_filename}</code>
           </p>
+
+          <div className="analysis-source-actions">
+            {isActiveDataSource ? (
+              <>
+                <span className="analysis-source-active">
+                  This dataset is driving the dashboard.
+                </span>
+                <button
+                  type="button"
+                  className="analysis-upload-button analysis-upload-button-secondary"
+                  onClick={onResetToSampleData}
+                >
+                  Reset to sample data
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="analysis-upload-button"
+                onClick={onUseAsDashboardData}
+                disabled={!canActivate}
+              >
+                Use as dashboard data
+              </button>
+            )}
+          </div>
 
           <SummaryCards labels={SUMMARY_LABELS} values={summaryValues} />
 
