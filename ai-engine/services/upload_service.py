@@ -8,6 +8,10 @@ from fastapi import HTTPException, UploadFile, status
 from utils.config import settings
 from utils.file_utils import generate_unique_filename
 
+# Bytes pulled from the upload stream per iteration: small enough that an
+# oversized upload is caught promptly, large enough to keep the loop cheap.
+UPLOAD_CHUNK_SIZE = 64 * 1024
+
 
 async def save_and_inspect_csv(file: UploadFile) -> dict:
     """
@@ -40,7 +44,7 @@ async def save_and_load_csv(file: UploadFile) -> tuple[str, pd.DataFrame]:
     """
     _validate_extension(file.filename)
 
-    contents = await file.read()
+    contents = await _read_within_size_limit(file)
     _validate_size(len(contents))
 
     filename = generate_unique_filename(file.filename)
@@ -48,6 +52,42 @@ async def save_and_load_csv(file: UploadFile) -> tuple[str, pd.DataFrame]:
     dataframe = _read_csv(file_path)
 
     return filename, dataframe
+
+
+async def _read_within_size_limit(file: UploadFile) -> bytes:
+    """
+    Reads the upload in chunks, stopping as soon as the accumulated size
+    exceeds `settings.MAX_UPLOAD_SIZE_BYTES`.
+
+    Previously the whole body was materialised with a single `await
+    file.read()` and only measured afterwards, so an arbitrarily large upload
+    was held in memory before being rejected. Reading incrementally caps what
+    this process ever holds at roughly the configured limit.
+
+    Note this bounds *our* memory, not the transfer: by the time the endpoint
+    runs, Starlette has already received and spooled the request body (to a
+    temporary file once it passes ~1 MB). Refusing the connection earlier
+    than that needs a limit at the proxy/ASGI layer, which is a deployment
+    concern rather than an application one.
+    """
+    chunks: list[bytes] = []
+    total_bytes = 0
+
+    while True:
+        chunk = await file.read(UPLOAD_CHUNK_SIZE)
+        if not chunk:
+            break
+
+        total_bytes += len(chunk)
+        if total_bytes > settings.MAX_UPLOAD_SIZE_BYTES:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=_max_size_message(),
+            )
+
+        chunks.append(chunk)
+
+    return b"".join(chunks)
 
 
 def _read_csv(file_path: str) -> pd.DataFrame:
@@ -75,15 +115,23 @@ def _validate_extension(filename: str | None) -> None:
         )
 
 
+def _max_size_message() -> str:
+    """Shared so the streaming guard and the final check can't drift apart."""
+    max_mb = settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)
+    return f"File exceeds the maximum allowed size of {max_mb} MB."
+
+
 def _validate_size(size_bytes: int) -> None:
     if size_bytes == 0:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
 
+    # _read_within_size_limit already rejects oversized uploads while
+    # streaming; this stays as a defensive backstop for any caller that
+    # supplies bytes some other way.
     if size_bytes > settings.MAX_UPLOAD_SIZE_BYTES:
-        max_mb = settings.MAX_UPLOAD_SIZE_BYTES // (1024 * 1024)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File exceeds the maximum allowed size of {max_mb} MB.",
+            detail=_max_size_message(),
         )
 
 

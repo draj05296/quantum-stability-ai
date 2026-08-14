@@ -1,0 +1,54 @@
+# Render blueprint for the QSFI AI engine (FastAPI backend).
+#
+# Deliberately minimal: it declares only what cannot be inferred. Everything
+# else stays in ai-engine/utils/config.py, overridable at runtime through
+# AI_ENGINE_* environment variables.
+#
+# Storage: a 1 GB persistent disk is mounted at /var/data, and both storage
+# directories point inside it. /var/data sits outside the repository checkout
+# (/opt/render/project/src), which Render replaces on every deploy - writing
+# there is what makes analyses survive restarts and redeploys.
+#
+# Attaching a disk has two consequences worth knowing: it requires a paid plan
+# (hence `starter`, not `free`), and it pins the service to a single instance
+# with zero-downtime deploys disabled.
+#
+# Not configured here, on purpose:
+#   - AI_ENGINE_ALLOWED_ORIGINS. Set it in the Render dashboard once the
+#     frontend domain exists; until then the localhost defaults apply and no
+#     production browser origin is permitted. It is left out of this file so a
+#     committed placeholder can never silently block the real frontend.
+#   - Authentication. There is none yet, so /history and /compare/latest still
+#     expose every caller's analyses to every other caller. Persistence makes
+#     that sharing permanent rather than fixing it - see README.md before
+#     exposing this service publicly.
+
+services:
+  - type: web
+    name: qsfi-ai-engine
+    runtime: python
+    rootDir: ai-engine
+    # Persistent disks are not available on the free plan.
+    plan: starter
+    buildCommand: pip install -r requirements.txt
+    # Binds every interface and uses the port Render injects. No --reload:
+    # the reloader is a development-only file watcher.
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    disk:
+      name: qsfi-data
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      # Mirrors ai-engine/runtime.txt; both are honoured by Render and pandas
+      # 3.0.5 / numpy 2.5.1 need a Python with published wheels.
+      - key: PYTHON_VERSION
+        value: 3.12.5
+      # Absolute paths on the mounted disk. Without these the relative
+      # defaults would resolve against rootDir (ai-engine/) inside the
+      # ephemeral checkout, and every analysis would be lost on redeploy.
+      # main.py creates both directories at startup.
+      - key: AI_ENGINE_UPLOAD_DIR
+        value: /var/data/uploads
+      - key: AI_ENGINE_PROCESSED_DIR
+        value: /var/data/processed

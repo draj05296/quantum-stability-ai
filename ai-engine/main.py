@@ -7,6 +7,9 @@ only exposes a health check; application structure (services/, models/,
 utils/) is scaffolded and ready for that logic to be added.
 """
 
+import os
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, File, HTTPException, UploadFile, status
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -23,10 +26,26 @@ from services.history_service import list_analyses
 from services.upload_service import save_and_inspect_csv
 from utils.config import settings
 
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """
+    Creates the configured storage directories at boot.
+
+    The services already create them on demand, but doing it here means a
+    misconfigured or unwritable path - most likely a mounted disk in a
+    deployment - surfaces immediately at startup instead of on the first
+    upload.
+    """
+    os.makedirs(settings.UPLOAD_DIR, exist_ok=True)
+    os.makedirs(settings.PROCESSED_DIR, exist_ok=True)
+    yield
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
     description="Backend API for the Quantum State Fidelity Index (QSFI) platform.",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
