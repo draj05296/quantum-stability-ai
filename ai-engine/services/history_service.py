@@ -1,83 +1,172 @@
 """
-Persists and retrieves saved analysis results under `processed/`.
+Persists and retrieves saved analysis results using PostgreSQL.
 
-Every successful /analyze call is written here as its own JSON file, so
-later requests (like /history and /compare/latest) can be served by reading
-those files back instead of re-uploading or re-analyzing anything.
+Every successful /analyze call is stored as its own database record, so
+/history and /compare/latest work across Render deployments and restarts.
 """
 
 import json
 import os
 from datetime import datetime, timezone
-from pathlib import Path
+from uuid import uuid4
 
-from utils.config import settings
-from utils.file_utils import resolve_safe_path
+import psycopg
+
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL environment variable is not configured.")
+
+
+def _get_connection():
+    return psycopg.connect(DATABASE_URL)
+
+
+def _ensure_table() -> None:
+    """
+    Creates the analysis history table if it does not already exist.
+    """
+    with _get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                CREATE TABLE IF NOT EXISTS analysis_history (
+                    id BIGSERIAL PRIMARY KEY,
+                    filename TEXT NOT NULL UNIQUE,
+                    source_filename TEXT NOT NULL,
+                    analyzed_at TIMESTAMPTZ NOT NULL,
+                    analysis JSONB NOT NULL
+                )
+                """
+            )
+        conn.commit()
 
 
 def save_analysis_result(source_filename: str, analysis: dict) -> dict:
     """
-    Writes an analyzer result to `processed/` as its own timestamped JSON
-    file (never overwriting a previous one) and returns
-    `{"filename": ..., "analyzed_at": ...}` for that saved record.
+    Saves an analyzer result as a new PostgreSQL record.
+
+    Every successful analysis receives a unique filename so previous
+    analyses are never overwritten.
     """
+    _ensure_table()
+
     analyzed_at = datetime.now(timezone.utc).isoformat()
-    processed_filename = f"{Path(source_filename).stem}.json"
 
-    record = {
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    unique_id = uuid4().hex[:8]
+
+    processed_filename = (
+        f"{timestamp}_{unique_id}_{source_filename.rsplit('.', 1)[0]}.json"
+    )
+
+    with _get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO analysis_history
+                    (filename, source_filename, analyzed_at, analysis)
+                VALUES
+                    (%s, %s, %s, %s)
+                """,
+                (
+                    processed_filename,
+                    source_filename,
+                    analyzed_at,
+                    json.dumps(analysis),
+                ),
+            )
+        conn.commit()
+
+    return {
+        "filename": processed_filename,
         "analyzed_at": analyzed_at,
-        "source_filename": source_filename,
-        **analysis,
     }
-
-    os.makedirs(settings.PROCESSED_DIR, exist_ok=True)
-    file_path = Path(settings.PROCESSED_DIR) / processed_filename
-    file_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
-
-    return {"filename": processed_filename, "analyzed_at": analyzed_at}
 
 
 def list_analyses() -> list[dict]:
     """
-    Lists every saved analysis as `{"filename": ..., "analyzed_at": ...}`,
-    newest first. Returns an empty list if none have been saved yet.
+    Lists every saved analysis, newest first.
     """
-    entries = []
+    _ensure_table()
 
-    for file_path in Path(settings.PROCESSED_DIR).glob("*.json"):
-        record = _read_json(file_path)
-        entries.append({"filename": file_path.name, "analyzed_at": record.get("analyzed_at", "")})
+    with _get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT filename, analyzed_at
+                FROM analysis_history
+                ORDER BY analyzed_at DESC
+                """
+            )
 
-    entries.sort(key=lambda entry: entry["analyzed_at"], reverse=True)
-    return entries
+            rows = cur.fetchall()
+
+    return [
+        {
+            "filename": row[0],
+            "analyzed_at": row[1].isoformat(),
+        }
+        for row in rows
+    ]
 
 
 def load_analysis(filename: str) -> dict:
-    """Reads one saved analysis record by its processed/ filename."""
-    file_path = resolve_safe_path(settings.PROCESSED_DIR, filename)
+    """
+    Loads one saved analysis from PostgreSQL by filename.
+    """
+    _ensure_table()
 
-    if not file_path.is_file():
-        raise FileNotFoundError(f"No saved analysis named {filename!r}.")
+    with _get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    filename,
+                    source_filename,
+                    analyzed_at,
+                    analysis
+                FROM analysis_history
+                WHERE filename = %s
+                """,
+                (filename,),
+            )
 
-    return _read_json(file_path)
+            row = cur.fetchone()
+
+    if row is None:
+        raise FileNotFoundError(
+            f"No saved analysis named {filename!r}."
+        )
+
+    record = {
+        "analyzed_at": row[2].isoformat(),
+        "source_filename": row[1],
+        **row[3],
+    }
+
+    return record
 
 
 def get_two_most_recent_analyses() -> tuple[dict, dict]:
     """
-    Returns the (previous, latest) full analysis records, newest last.
-    Raises ValueError if fewer than two analyses have been saved.
+    Returns (previous, latest) full analysis records.
+
+    Raises ValueError if fewer than two analyses exist.
     """
     entries = list_analyses()
 
     if len(entries) < 2:
         raise ValueError(
-            f"At least two saved analyses are required to compare; found {len(entries)}."
+            f"At least two saved analyses are required to compare; "
+            f"found {len(entries)}."
         )
 
-    latest_entry, previous_entry = entries[0], entries[1]
-    return load_analysis(previous_entry["filename"]), load_analysis(latest_entry["filename"])
+    latest_entry = entries[0]
+    previous_entry = entries[1]
 
+    previous = load_analysis(previous_entry["filename"])
+    latest = load_analysis(latest_entry["filename"])
 
-def _read_json(file_path: Path) -> dict:
-    with file_path.open("r", encoding="utf-8") as f:
-        return json.load(f)
+    return previous, latest
