@@ -1,10 +1,8 @@
 """
 QSFI AI Engine - FastAPI backend entrypoint.
 
-This service will eventually host the AI-powered quantum stability analysis
-and qubit recommendation features described on the QSFI frontend. For now it
-only exposes a health check; application structure (services/, models/,
-utils/) is scaffolded and ready for that logic to be added.
+This service hosts the AI-powered quantum stability analysis
+and qubit recommendation features described on the QSFI frontend.
 """
 
 import os
@@ -18,13 +16,19 @@ from models.schemas import (
     CompareLatestResponse,
     ErrorResponse,
     HistoryResponse,
+    RiskResponse,
+    TrendResponse,
     UploadResponse,
 )
+
 from services.analysis_service import analyze_uploaded_csv
 from services.compare_service import get_latest_comparison
 from services.history_service import list_analyses
+from services.trend_service import get_trend_analysis
+from services.risk_service import get_risk_analysis
 from services.upload_service import save_and_inspect_csv
 from utils.config import settings
+
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
@@ -201,4 +205,81 @@ def compare_latest() -> CompareLatestResponse:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Unexpected server error while comparing analyses: {exc}",
+        ) from exc
+
+
+@app.get(
+    "/trend",
+    response_model=TrendResponse,
+    tags=["analysis"],
+    summary="Analyze multi-day QSFI trends",
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Fewer than two saved analyses are available for trend analysis.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Server failed to calculate multi-day trends.",
+        },
+    },
+)
+def get_trend(days: int = 5) -> TrendResponse:
+    """
+    Calculates multi-day QSFI, T1, and T2 trends for qubits present
+    throughout the selected analysis period.
+
+    The default period is five saved dataset days.
+    """
+    try:
+        return get_trend_analysis(days)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected server error while calculating trends: {exc}",
+        ) from exc
+@app.get(
+    "/risk",
+    response_model=RiskResponse,
+    tags=["analysis"],
+    summary="Calculate prototype early-instability risk",
+    responses={
+        status.HTTP_400_BAD_REQUEST: {
+            "model": ErrorResponse,
+            "description": "Fewer than two saved analyses are available for risk analysis.",
+        },
+        status.HTTP_500_INTERNAL_SERVER_ERROR: {
+            "model": ErrorResponse,
+            "description": "Server failed to calculate risk analysis.",
+        },
+    },
+)
+def get_risk(days: int = 5) -> RiskResponse:
+    """
+    Calculates a prototype early-instability risk indicator
+    using multi-day QSFI, T1, and T2 trends.
+
+    The risk score is a project-defined heuristic and is not
+    a validated probability of quantum hardware failure.
+    """
+    try:
+        return get_risk_analysis(days)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Unexpected server error while calculating risk: {exc}",
         ) from exc

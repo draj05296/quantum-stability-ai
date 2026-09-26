@@ -178,3 +178,51 @@ class CompareLatestResponse(BaseModel):
     newly_unstable_qubits: list[QubitStatusChange] = Field(
         ..., description="Qubits that were Stable in the previous analysis and are Degrading in the latest."
     )
+class TrendAnalysisReference(BaseModel):
+    """Reference to the oldest or latest analysis used in trend analysis."""
+
+    filename: str | None
+    analyzed_at: str | None
+
+
+class QubitTrend(BaseModel):
+    """Multi-day QSFI, T1, and T2 trend for one qubit."""
+
+    qubit: int
+    qsfi_day1: float
+    qsfi_latest: float
+    qsfi_change_percent: float
+    qsfi_slope: float
+    t1_slope: float
+    t2_slope: float
+
+class TrendResponse(BaseModel):
+    """Response returned by GET /trend."""
+
+    days_analyzed: int
+    qubits_analyzed: int
+    oldest: TrendAnalysisReference
+    latest: TrendAnalysisReference
+    trends: list[QubitTrend]
+
+
+class RiskResult(BaseModel):
+    """Prototype early-instability risk result for one qubit."""
+
+    qubit: int
+    risk_score: float
+    risk_level: str
+    qsfi_change_percent: float
+    qsfi_slope: float
+    t1_slope: float
+    t2_slope: float
+
+
+class RiskResponse(BaseModel):
+    """Response returned by GET /risk."""
+
+    days_analyzed: int
+    qubits_analyzed: int
+    oldest: TrendAnalysisReference
+    latest: TrendAnalysisReference
+    risk_results: list[RiskResult]

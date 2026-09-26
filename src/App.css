@@ -1414,3 +1414,30 @@ html{
   font-size:14px;
   color:#34d399;
 }
+
+/* Early Instability Risk section */
+
+.risk-disclaimer{
+  margin-top:8px;
+  font-size:14px;
+  font-weight:600;
+  color:#fbbf24;
+}
+
+.status-high{
+  color:#f87171;
+  background:rgba(248,113,113,.12);
+  border:1px solid rgba(248,113,113,.3);
+}
+
+.status-moderate{
+  color:#fbbf24;
+  background:rgba(251,191,36,.12);
+  border:1px solid rgba(251,191,36,.3);
+}
+
+.status-low{
+  color:#34d399;
+  background:rgba(52,211,153,.12);
+  border:1px solid rgba(52,211,153,.3);
+}

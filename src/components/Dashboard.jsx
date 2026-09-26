@@ -20,6 +20,7 @@ import QubitTable from "./dashboard/QubitTable";
 import Pagination from "./dashboard/Pagination";
 import QubitDetailsPanel from "./dashboard/QubitDetailsPanel";
 import AnalysisUploadPanel from "./dashboard/AnalysisUploadPanel";
+import RiskSection from "./dashboard/RiskSection";
 
 /**
  * Top-level Dashboard page. This component only wires data (via custom
@@ -195,6 +196,8 @@ function Dashboard() {
           onPageChange={setCurrentPage}
         />
       </div>
+
+      <RiskSection />
 
       <AnalysisUploadPanel
         isAnalyzing={isAnalyzing}

@@ -51,21 +51,19 @@ async function readJsonBody(response) {
 }
 
 /**
- * POSTs multipart/form-data to `path` and returns the parsed JSON response.
+ * Sends a request to `path` and returns the parsed JSON response.
  *
- * The Content-Type header is deliberately not set: the browser has to add it
- * itself so the multipart boundary is included.
- *
- * Throws ApiError on a non-2xx response or an unreachable server. AbortError
- * is re-thrown untouched so callers can tell a cancellation apart from a
+ * Shared by postFormData and getJson so failures are reported one way:
+ * ApiError on a non-2xx response or an unreachable server. AbortError is
+ * re-thrown untouched so callers can tell a cancellation apart from a
  * genuine failure.
  */
-export async function postFormData(path, formData, { signal } = {}) {
+async function requestJson(path, init) {
   const url = `${API_BASE_URL}${path}`;
   let response;
 
   try {
-    response = await fetch(url, { method: "POST", body: formData, signal });
+    response = await fetch(url, init);
   } catch (error) {
     if (error?.name === "AbortError") throw error;
 
@@ -85,4 +83,19 @@ export async function postFormData(path, formData, { signal } = {}) {
   }
 
   return payload;
+}
+
+/**
+ * POSTs multipart/form-data to `path` and returns the parsed JSON response.
+ *
+ * The Content-Type header is deliberately not set: the browser has to add it
+ * itself so the multipart boundary is included.
+ */
+export function postFormData(path, formData, { signal } = {}) {
+  return requestJson(path, { method: "POST", body: formData, signal });
+}
+
+/** GETs `path` and returns the parsed JSON response. */
+export function getJson(path, { signal } = {}) {
+  return requestJson(path, { method: "GET", signal });
 }
