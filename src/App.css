@@ -1441,3 +1441,142 @@ html{
   background:rgba(52,211,153,.12);
   border:1px solid rgba(52,211,153,.3);
 }
+/* Historical Trend Analysis section */
+
+.trend-qubit-selector{
+  margin-bottom:20px;
+  max-width:200px;
+}
+
+.trend-average-note{
+  margin:4px 0 16px;
+  font-size:13px;
+  color:#9ca3af;
+}
+
+.dashboard-table td.trend-decline{
+  color:#f87171;
+  font-weight:600;
+}
+
+.dashboard-table td.trend-improve{
+  color:#34d399;
+  font-weight:600;
+}
+
+.dashboard-table td.trend-neutral{
+  color:#9ca3af;
+}
+
+.trend-top-declines{
+  margin-top:20px;
+}
+
+.trend-top-declines h4{
+  color:#e2e8f0;
+  font-size:15px;
+  margin-bottom:10px;
+}
+
+.trend-top-declines ul{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px 20px;
+  padding:0;
+  margin:0;
+  list-style:none;
+}
+
+.trend-top-declines li{
+  color:#e2e8f0;
+  font-size:14px;
+}
+
+.trend-top-declines .trend-decline{
+  font-weight:600;
+}
+/* Early-Warning Alerts section */
+
+.early-warning-priority{
+  margin-top:20px;
+}
+
+.early-warning-priority h4,
+.early-warning-group h4{
+  color:#e2e8f0;
+  font-size:15px;
+  margin-bottom:10px;
+}
+
+.early-warning-group{
+  margin-top:28px;
+}
+
+.early-warning-alert-list{
+  display:flex;
+  flex-direction:column;
+  gap:14px;
+}
+
+.early-warning-alert{
+  padding:16px 18px;
+  border:1px solid rgba(255,255,255,.08);
+  border-radius:14px;
+  background:rgba(255,255,255,.03);
+}
+
+.early-warning-alert-high{
+  border-left:4px solid #f87171;
+}
+
+.early-warning-alert-header{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  font-weight:600;
+  color:#e2e8f0;
+}
+
+.early-warning-alert-note{
+  margin:8px 0 4px;
+  font-size:13px;
+  color:#9ca3af;
+}
+
+.early-warning-moderate-list{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  padding:0;
+  margin:0;
+  list-style:none;
+}
+
+.early-warning-alert-moderate{
+  display:flex;
+  flex-wrap:wrap;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:8px;
+  padding:12px 16px;
+  border-left:4px solid #fbbf24;
+  border-radius:10px;
+  background:rgba(255,255,255,.03);
+  color:#e2e8f0;
+  font-size:14px;
+}
+
+.early-warning-moderate-detail{
+  font-size:13px;
+  color:#9ca3af;
+}
+
+@media (max-width:600px){
+  .early-warning-alert-header,
+  .early-warning-alert-moderate{
+    flex-direction:column;
+    align-items:flex-start;
+  }
+}

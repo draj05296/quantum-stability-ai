@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useState } from "react";
 import { DATA_SOURCE, useQuantumDataSource } from "../hooks/useQuantumDataSource";
 import { useAnalyzeUpload } from "../hooks/useAnalyzeUpload";
+import { useRiskAnalysis } from "../hooks/useRiskAnalysis";
 import { isValidAnalysis } from "../utils/analysisAdapter";
 import { useTableFilters } from "../hooks/useTableFilters";
 import { usePagination } from "../hooks/usePagination";
@@ -21,6 +22,8 @@ import Pagination from "./dashboard/Pagination";
 import QubitDetailsPanel from "./dashboard/QubitDetailsPanel";
 import AnalysisUploadPanel from "./dashboard/AnalysisUploadPanel";
 import RiskSection from "./dashboard/RiskSection";
+import TrendSection from "./dashboard/TrendSection";
+import EarlyWarningSection from "./dashboard/EarlyWarningSection";
 
 /**
  * Top-level Dashboard page. This component only wires data (via custom
@@ -124,6 +127,15 @@ function Dashboard() {
   const { selectedQubitDetails, isPanelOpen, openQubitPanel, closeQubitPanel } =
     useQubitDetailsPanel(allRecords);
 
+  // Lifted here (rather than owned by RiskSection) so EarlyWarningSection can
+  // read the same loaded result instead of issuing a second /risk request.
+  const {
+    isLoading: isRiskLoading,
+    risk,
+    error: riskError,
+    loadRisk,
+  } = useRiskAnalysis();
+
   return (
     <section className="dashboard" id="dashboard">
       <div className="dashboard-heading">
@@ -197,7 +209,20 @@ function Dashboard() {
         />
       </div>
 
-      <RiskSection />
+      <TrendSection />
+
+      <RiskSection
+        isLoading={isRiskLoading}
+        risk={risk}
+        error={riskError}
+        onLoadRisk={loadRisk}
+      />
+
+      <EarlyWarningSection
+        isLoading={isRiskLoading}
+        risk={risk}
+        error={riskError}
+      />
 
       <AnalysisUploadPanel
         isAnalyzing={isAnalyzing}

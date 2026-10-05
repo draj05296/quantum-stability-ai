@@ -185,6 +185,28 @@ class TrendAnalysisReference(BaseModel):
     analyzed_at: str | None
 
 
+class QubitHistoricalPoint(BaseModel):
+    """
+    One qubit's actual measured QSFI/T1/T2 from a single saved analysis.
+
+    Sourced directly from that analysis's saved PostgreSQL record - never
+    interpolated, estimated, or fabricated.
+    """
+
+    analysis_filename: str | None = Field(
+        None, description="The unique filename this analysis was saved under in PostgreSQL."
+    )
+    filename: str | None = Field(
+        None, description="The original uploaded CSV's filename (may repeat across analyses)."
+    )
+    analyzed_at: str | None = Field(
+        None, description="UTC timestamp (ISO 8601) this analysis was run and saved."
+    )
+    qsfi: float
+    t1: float
+    t2: float
+
+
 class QubitTrend(BaseModel):
     """Multi-day QSFI, T1, and T2 trend for one qubit."""
 
@@ -195,6 +217,17 @@ class QubitTrend(BaseModel):
     qsfi_slope: float
     t1_slope: float
     t2_slope: float
+    history: list[QubitHistoricalPoint] = Field(
+        ...,
+        description=(
+            "This qubit's actual measured QSFI/T1/T2 from each saved analysis "
+            "in the selected window, oldest first. Same length as "
+            "days_analyzed for every qubit in `trends`, since a qubit missing "
+            "from any selected analysis is excluded from `trends` entirely "
+            "rather than given a fabricated point."
+        ),
+    )
+
 
 class TrendResponse(BaseModel):
     """Response returned by GET /trend."""

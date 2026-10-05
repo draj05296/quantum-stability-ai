@@ -1,5 +1,4 @@
 import { useMemo } from "react";
-import { useRiskAnalysis } from "../../hooks/useRiskAnalysis";
 import StatusBadge from "./StatusBadge";
 
 const RISK_DAYS = 5;
@@ -11,10 +10,12 @@ const MAX_TABLE_ROWS = 25;
  * loaded on demand. Independent of the client-side prediction section and of
  * whichever dataset the dashboard is currently showing - the backend scores
  * its own saved upload history.
+ *
+ * Controlled: the request state lives in Dashboard (via useRiskAnalysis) so
+ * EarlyWarningSection can read the same loaded result instead of triggering
+ * a second /risk request.
  */
-function RiskSection() {
-  const { isLoading, risk, error, loadRisk } = useRiskAnalysis();
-
+function RiskSection({ isLoading, risk, error, onLoadRisk }) {
   const levelCounts = useMemo(() => {
     const counts = { High: 0, Moderate: 0, Low: 0 };
     risk?.risk_results.forEach((r) => {
@@ -46,7 +47,7 @@ function RiskSection() {
         <button
           type="button"
           className="analysis-upload-button"
-          onClick={() => loadRisk(RISK_DAYS)}
+          onClick={() => onLoadRisk(RISK_DAYS)}
           disabled={isLoading}
         >
           {isLoading ? "Loading…" : "Load Risk Analysis"}

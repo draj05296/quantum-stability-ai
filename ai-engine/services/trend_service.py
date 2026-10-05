@@ -6,6 +6,9 @@ This service retrieves saved analysis results and calculates:
 - QSFI trend slope across multiple days
 - T1 trend slope
 - T2 trend slope
+- Each qubit's actual measured QSFI/T1/T2 history across the selected
+  analyses (the `history` field), read directly from the saved records -
+  never recalculated from raw CSVs, interpolated, or fabricated.
 
 The calculations are based on the saved per-qubit analysis results.
 """
@@ -40,10 +43,20 @@ def get_trend_analysis(days: int = 5) -> dict:
         for entry in selected_entries
     ]
 
-    # Match each analysis by qubit ID.
+    # Match each analysis by qubit ID. Each reading also carries the actual
+    # source filename/timestamp of the analysis it came from, so the full
+    # measured history can be returned alongside the existing summary fields.
+    # `analysis_filename` is the unique name this analysis was saved under
+    # (from list_analyses(), aligned by index with `analyses`); `filename`
+    # is the original uploaded CSV's name and can repeat across analyses
+    # (e.g. the same file re-uploaded later) - the two are kept distinct.
     qubit_data = {}
 
     for day_index, analysis in enumerate(analyses):
+        point_analysis_filename = selected_entries[day_index]["filename"]
+        point_filename = analysis.get("source_filename")
+        point_analyzed_at = analysis.get("analyzed_at")
+
         for qubit in analysis["qubits"]:
             qubit_id = qubit["qubit"]
 
@@ -56,13 +69,21 @@ def get_trend_analysis(days: int = 5) -> dict:
                     "qsfi": qubit["qsfi"],
                     "t1": qubit["t1"],
                     "t2": qubit["t2"],
+                    "analysis_filename": point_analysis_filename,
+                    "filename": point_filename,
+                    "analyzed_at": point_analyzed_at,
                 }
             )
 
     trends = []
 
     for qubit_id, readings in qubit_data.items():
-        # Only analyze qubits available in every selected analysis.
+        # Only analyze qubits available in every selected analysis. This is
+        # unchanged from before `history` existed: a qubit missing from any
+        # one selected analysis is excluded from `trends` entirely rather
+        # than given a fabricated reading for the analysis it lacks, so every
+        # qubit that does appear always has one real `history` point per
+        # selected analysis - never a gap, never an invented value.
         if len(readings) != len(analyses):
             continue
 
@@ -79,6 +100,21 @@ def get_trend_analysis(days: int = 5) -> dict:
         t1_slope = _linear_slope(t1_values)
         t2_slope = _linear_slope(t2_values)
 
+        # `readings` is already oldest -> latest: it was built by iterating
+        # `analyses` (already reversed into that order) in sequence, so no
+        # additional sort is needed here.
+        history = [
+            {
+                "analysis_filename": reading["analysis_filename"],
+                "filename": reading["filename"],
+                "analyzed_at": reading["analyzed_at"],
+                "qsfi": reading["qsfi"],
+                "t1": reading["t1"],
+                "t2": reading["t2"],
+            }
+            for reading in readings
+        ]
+
         trends.append(
             {
                 "qubit": qubit_id,
@@ -88,6 +124,7 @@ def get_trend_analysis(days: int = 5) -> dict:
                 "qsfi_slope": qsfi_slope,
                 "t1_slope": t1_slope,
                 "t2_slope": t2_slope,
+                "history": history,
             }
         )
 

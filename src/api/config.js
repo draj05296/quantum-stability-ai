@@ -15,4 +15,5 @@ export const API_BASE_URL = (
 export const API_ENDPOINTS = {
   analyze: "/analyze",
   risk: "/risk",
+  trend: "/trend",
 };
