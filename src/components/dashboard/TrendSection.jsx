@@ -49,7 +49,31 @@ function formatQsfiUs(seconds) {
   return `${toMicroseconds(seconds).toFixed(2)} μs`;
 }
 
+// Matches the YYYY-MM-DD date embedded in filenames such as
+// "quantum_data_week1_day3_2026-10-02.csv" (the project's dated-upload
+// convention). Older sample files like "quantum_data_day1.csv" carry no
+// such date and fall back to analyzed_at below.
+const FILENAME_DATE_PATTERN = /(\d{4})-(\d{2})-(\d{2})/;
+
+const SHORT_MONTH_NAMES = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+
 function formatPointLabel(point, index) {
+  // The source filename's embedded date, when present, is the real
+  // measurement date. analyzed_at is only when the analysis was
+  // uploaded/saved - several analyses uploaded in one batch can all share
+  // the same analyzed_at date, which would otherwise collapse every x-axis
+  // label to that single day even though the measurements are genuinely
+  // from different dates.
+  const filenameMatch = point.filename?.match(FILENAME_DATE_PATTERN);
+  if (filenameMatch) {
+    const [, , month, day] = filenameMatch;
+    const monthName = SHORT_MONTH_NAMES[Number(month) - 1];
+    if (monthName) return `${monthName} ${Number(day)}`;
+  }
+
   if (!point.analyzed_at) return `Analysis ${index + 1}`;
   return new Date(point.analyzed_at).toLocaleDateString(undefined, {
     month: "short",
