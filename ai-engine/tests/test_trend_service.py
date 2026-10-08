@@ -15,7 +15,11 @@ import pytest
 
 import services.trend_service as trend_service
 from services.risk_service import get_risk_analysis
-from services.trend_service import get_trend_analysis
+from services.trend_service import (
+    _extract_collection_day,
+    _select_one_entry_per_collection_day,
+    get_trend_analysis,
+)
 
 
 def _analysis(source_filename, analyzed_at, qubits):
@@ -43,8 +47,13 @@ def _install_fake_history(monkeypatch, analyses_oldest_first):
     Registers a fixed set of saved analyses and patches trend_service's
     list_analyses/load_analysis to serve them, mimicking
     services.history_service's real contract (list_analyses newest-first,
-    each entry naming a filename load_analysis can look up) without a
-    database.
+    each entry carrying filename/analyzed_at/source_filename, with
+    load_analysis looking a record up by its filename) without a database.
+
+    Entries are only appended here, never reordered or deduplicated - that
+    collapsing is get_trend_analysis's job (via
+    _select_one_entry_per_collection_day), and the point of this helper is
+    to hand it a realistic, undeduplicated list to collapse.
     """
     registry = {}
     for index, analysis in enumerate(analyses_oldest_first):
@@ -52,7 +61,11 @@ def _install_fake_history(monkeypatch, analyses_oldest_first):
         registry[filename] = analysis
 
     entries_newest_first = [
-        {"filename": f"saved_{index}.json", "analyzed_at": analysis["analyzed_at"]}
+        {
+            "filename": f"saved_{index}.json",
+            "analyzed_at": analysis["analyzed_at"],
+            "source_filename": analysis["source_filename"],
+        }
         for index, analysis in enumerate(analyses_oldest_first)
     ][::-1]
 
@@ -257,3 +270,177 @@ def test_duplicate_source_filename_uploads_are_both_kept(monkeypatch):
     # with its own timestamp and value - neither was discarded or merged.
     assert history[0]["analyzed_at"] != history[1]["analyzed_at"]
     assert history[0]["qsfi"] != history[1]["qsfi"]
+
+
+# ---------------------------------------------------------------------------
+# 8. Duplicate analyses for the SAME research collection day (identified by
+#    the date embedded in the source filename) collapse to one entry - the
+#    most recently analyzed record for that day - so `days` counts unique
+#    collection days rather than raw database records.
+# ---------------------------------------------------------------------------
+
+
+def _dated_analysis(day_label, date, analyzed_at, qsfi):
+    """A saved analysis whose source filename embeds its real collection date."""
+    return _analysis(
+        f"quantum_data_week1_{day_label}_{date}.csv",
+        analyzed_at,
+        [(0, qsfi, qsfi, qsfi)],
+    )
+
+
+def test_duplicate_analyses_for_the_same_collection_day_use_the_most_recent(monkeypatch):
+    """
+    Mirrors the real /history state this fix was written for: Day 1 and
+    Day 5 each have two saved analyses (e.g. a re-upload), every other day
+    has one, and Oct 4 was never collected at all.
+
+    Supplied in true chronological (oldest analyzed_at -> latest) order, as
+    _install_fake_history requires.
+    """
+    analyses = [
+        # _install_fake_history requires true chronological (analyzed_at
+        # ascending) order, exactly like the real list_analyses() guarantees
+        # via its own ORDER BY - a re-upload's later analyzed_at must appear
+        # after its original here, not merely be adjacent to it in list order.
+        _dated_analysis("day1", "2026-09-29", "2026-09-29T09:00:00+00:00", 10.0),  # Day 1, first upload
+        _dated_analysis("day1", "2026-09-29", "2026-09-29T15:00:00+00:00", 10.5),  # Day 1, RE-upload (most recent for that day)
+        _dated_analysis("day2", "2026-10-01", "2026-10-01T09:00:00+00:00", 11.0),  # Day 2
+        _dated_analysis("day3", "2026-10-02", "2026-10-02T09:00:00+00:00", 12.0),  # Day 3
+        _dated_analysis("day4", "2026-10-03", "2026-10-03T09:00:00+00:00", 13.0),  # Day 4
+        _dated_analysis("day5", "2026-10-05", "2026-10-05T09:00:00+00:00", 14.0),  # Day 5, first upload
+        _dated_analysis("day5", "2026-10-05", "2026-10-05T18:00:00+00:00", 14.5),  # Day 5, RE-upload (most recent for that day)
+        _dated_analysis("day6", "2026-10-06", "2026-10-06T09:00:00+00:00", 15.0),  # Day 6
+        _dated_analysis("day7", "2026-10-07", "2026-10-07T09:00:00+00:00", 16.0),  # Day 7
+    ]
+    _install_fake_history(monkeypatch, analyses)
+
+    # days=7 must cover all 7 UNIQUE collection days (9 raw records), using
+    # each duplicated day's most recently analyzed record, in chronological
+    # order, with no fabricated Oct 4 entry in between.
+    result = get_trend_analysis(days=7)
+    (trend,) = result["trends"]
+
+    assert result["days_analyzed"] == 7
+    assert [p["qsfi"] for p in trend["history"]] == [
+        10.5,  # Day 1 - the 15:00 re-upload won, not the 09:00 original
+        11.0,  # Day 2
+        12.0,  # Day 3
+        13.0,  # Day 4
+        14.5,  # Day 5 - the 18:00 re-upload won, not the 09:00 original
+        15.0,  # Day 6
+        16.0,  # Day 7
+    ]
+    assert [p["filename"] for p in trend["history"]] == [
+        "quantum_data_week1_day1_2026-09-29.csv",
+        "quantum_data_week1_day2_2026-10-01.csv",
+        "quantum_data_week1_day3_2026-10-02.csv",
+        "quantum_data_week1_day4_2026-10-03.csv",
+        "quantum_data_week1_day5_2026-10-05.csv",
+        "quantum_data_week1_day6_2026-10-06.csv",
+        "quantum_data_week1_day7_2026-10-07.csv",
+    ]
+    # No entry anywhere references an Oct 4 collection - none exists.
+    assert all("2026-10-04" not in (p["filename"] or "") for p in trend["history"])
+
+
+def test_days_parameter_counts_unique_collection_days_not_raw_records(monkeypatch):
+    """days=5 against the same 9-record/7-day history must select the 5
+    most recent UNIQUE days (Day 3-7), not the 5 most recent raw records
+    (which would wrongly include both Day 5 duplicates and only reach back
+    to Day 4)."""
+    analyses = [
+        _dated_analysis("day1", "2026-09-29", "2026-09-29T09:00:00+00:00", 10.0),
+        _dated_analysis("day1", "2026-09-29", "2026-09-29T15:00:00+00:00", 10.5),
+        _dated_analysis("day2", "2026-10-01", "2026-10-01T09:00:00+00:00", 11.0),
+        _dated_analysis("day3", "2026-10-02", "2026-10-02T09:00:00+00:00", 12.0),
+        _dated_analysis("day4", "2026-10-03", "2026-10-03T09:00:00+00:00", 13.0),
+        _dated_analysis("day5", "2026-10-05", "2026-10-05T09:00:00+00:00", 14.0),
+        _dated_analysis("day5", "2026-10-05", "2026-10-05T18:00:00+00:00", 14.5),
+        _dated_analysis("day6", "2026-10-06", "2026-10-06T09:00:00+00:00", 15.0),
+        _dated_analysis("day7", "2026-10-07", "2026-10-07T09:00:00+00:00", 16.0),
+    ]
+    _install_fake_history(monkeypatch, analyses)
+
+    result = get_trend_analysis(days=5)
+    (trend,) = result["trends"]
+
+    assert result["days_analyzed"] == 5
+    assert [p["qsfi"] for p in trend["history"]] == [12.0, 13.0, 14.5, 15.0, 16.0]
+    assert [p["filename"] for p in trend["history"]] == [
+        "quantum_data_week1_day3_2026-10-02.csv",
+        "quantum_data_week1_day4_2026-10-03.csv",
+        "quantum_data_week1_day5_2026-10-05.csv",
+        "quantum_data_week1_day6_2026-10-06.csv",
+        "quantum_data_week1_day7_2026-10-07.csv",
+    ]
+
+
+def test_collection_day_deduplication_does_not_change_history_record_count(monkeypatch):
+    """
+    The dedup is purely a selection concern inside trend_service -
+    list_analyses() (what GET /history reports) must still return every raw
+    record untouched.
+    """
+    analyses = [
+        _dated_analysis("day1", "2026-09-29", "2026-09-29T09:00:00+00:00", 10.0),
+        _dated_analysis("day1", "2026-09-29", "2026-09-29T15:00:00+00:00", 10.5),
+        _dated_analysis("day2", "2026-10-01", "2026-10-01T09:00:00+00:00", 11.0),
+    ]
+    _install_fake_history(monkeypatch, analyses)
+
+    # trend_service.list_analyses must be referenced dynamically (via the
+    # module, not a `from ... import` snapshot taken before patching) so it
+    # reflects what _install_fake_history just patched.
+    assert len(trend_service.list_analyses()) == 3
+
+
+# ---------------------------------------------------------------------------
+# Pure unit tests for the two new helpers, independent of get_trend_analysis.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("source_filename", "expected"),
+    [
+        ("quantum_data_week1_day5_2026-10-05.csv", "2026-10-05"),
+        ("quantum_data_week1_day1_2026-09-29.csv", "2026-09-29"),
+        ("quantum_data_day1.csv", None),  # older, pre-dated-convention file
+        (None, None),
+    ],
+)
+def test_extract_collection_day(source_filename, expected):
+    assert _extract_collection_day(source_filename) == expected
+
+
+def test_select_one_entry_per_collection_day_keeps_the_newest_duplicate():
+    # Newest-first, as list_analyses() returns it.
+    entries = [
+        {"filename": "b.json", "analyzed_at": "2026-09-29T15:00:00+00:00",
+         "source_filename": "quantum_data_week1_day1_2026-09-29.csv"},
+        {"filename": "c.json", "analyzed_at": "2026-10-01T09:00:00+00:00",
+         "source_filename": "quantum_data_week1_day2_2026-10-01.csv"},
+        {"filename": "a.json", "analyzed_at": "2026-09-29T09:00:00+00:00",
+         "source_filename": "quantum_data_week1_day1_2026-09-29.csv"},
+    ]
+
+    result = _select_one_entry_per_collection_day(entries)
+
+    # Still newest-first; Day 1's older 09:00 duplicate ("a.json") is gone,
+    # only the newer 15:00 one ("b.json") represents that day.
+    assert [e["filename"] for e in result] == ["b.json", "c.json"]
+
+
+def test_select_one_entry_per_collection_day_is_a_no_op_without_duplicates():
+    entries = [
+        {"filename": "b.json", "analyzed_at": "2026-10-01T09:00:00+00:00",
+         "source_filename": "quantum_data_week1_day2_2026-10-01.csv"},
+        {"filename": "a.json", "analyzed_at": "2026-09-29T09:00:00+00:00",
+         "source_filename": "quantum_data_week1_day1_2026-09-29.csv"},
+    ]
+
+    assert _select_one_entry_per_collection_day(entries) == entries
+
+
+def test_select_one_entry_per_collection_day_handles_empty_list():
+    assert _select_one_entry_per_collection_day([]) == []

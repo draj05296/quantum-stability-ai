@@ -10,20 +10,79 @@ This service retrieves saved analysis results and calculates:
   analyses (the `history` field), read directly from the saved records -
   never recalculated from raw CSVs, interpolated, or fabricated.
 
+`days` selects unique research collection days, not raw database records: a
+research day can have more than one saved analysis (e.g. a file re-uploaded
+to fix a mistake), and these are collapsed to that day's most recently
+analyzed record before anything else runs - see
+_select_one_entry_per_collection_day().
+
 The calculations are based on the saved per-qubit analysis results.
 """
 
+import re
+
 from services.history_service import list_analyses, load_analysis
+
+# Matches the YYYY-MM-DD collection date embedded in a source filename, e.g.
+# "quantum_data_week1_day5_2026-10-05.csv" -> "2026-10-05". Mirrors the same
+# convention the frontend parses for chart labels
+# (src/components/dashboard/TrendSection.jsx).
+_COLLECTION_DAY_PATTERN = re.compile(r"(\d{4}-\d{2}-\d{2})")
+
+
+def _extract_collection_day(source_filename: str | None) -> str | None:
+    """
+    Returns the YYYY-MM-DD collection date embedded in `source_filename`, or
+    None if it has no such date (e.g. the older "quantum_data_day1.csv"
+    sample files, which predate this naming convention).
+    """
+    if not source_filename:
+        return None
+
+    match = _COLLECTION_DAY_PATTERN.search(source_filename)
+    return match.group(1) if match else None
+
+
+def _select_one_entry_per_collection_day(entries: list[dict]) -> list[dict]:
+    """
+    Collapses `entries` (as returned by list_analyses(): newest first, each
+    with filename/analyzed_at/source_filename) to one entry per unique
+    collection day, keeping the most recently analyzed record whenever a day
+    has more than one saved analysis. Stays newest-first, like the input.
+
+    Never deletes or modifies any saved record - this only changes which
+    single record /trend reads to represent a day that was analyzed more
+    than once. GET /history still lists every record.
+
+    A source filename with no parseable collection date is treated as its
+    own unique day (keyed by its own unique database filename instead of a
+    date), so it's never merged with - or silently dropped in favor of -
+    another record.
+    """
+    most_recent_entry_by_day = {}
+    days_in_order = []
+
+    for entry in entries:
+        day_key = _extract_collection_day(entry.get("source_filename")) or entry["filename"]
+
+        if day_key not in most_recent_entry_by_day:
+            # `entries` is already newest-first, so the first entry seen for
+            # a given day is already its most recently analyzed one; any
+            # later (older) duplicate for the same day is simply skipped.
+            most_recent_entry_by_day[day_key] = entry
+            days_in_order.append(day_key)
+
+    return [most_recent_entry_by_day[day_key] for day_key in days_in_order]
 
 
 def get_trend_analysis(days: int = 5) -> dict:
     """
-    Analyze the most recent saved analyses across multiple days.
+    Analyze the most recent unique collection days across multiple days.
 
 
     Returns per-qubit QSFI, T1, and T2 trends.
     """
-    entries = list_analyses()
+    entries = _select_one_entry_per_collection_day(list_analyses())
 
     if len(entries) < 2:
         raise ValueError(
@@ -31,10 +90,10 @@ def get_trend_analysis(days: int = 5) -> dict:
             f"found {len(entries)}."
         )
 
-    # Take the requested number of newest analyses.
+    # Take the requested number of newest unique collection days.
     selected_entries = entries[:days]
 
-    # list_analyses() returns newest first.
+    # entries is newest first.
     # Reverse so calculations run chronologically: oldest -> newest.
     selected_entries.reverse()
 

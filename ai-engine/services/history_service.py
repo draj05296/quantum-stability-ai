@@ -88,6 +88,14 @@ def save_analysis_result(source_filename: str, analysis: dict) -> dict:
 def list_analyses() -> list[dict]:
     """
     Lists every saved analysis, newest first.
+
+    Includes `source_filename` alongside the existing `filename`/
+    `analyzed_at` so callers (currently services.trend_service, to group
+    analyses by collection day) can see which original CSV each record came
+    from without loading every record's full JSONB analysis. GET /history's
+    response model only declares `filename`/`analyzed_at`, so this extra key
+    is silently dropped from that endpoint's JSON - the public /history
+    contract is unchanged.
     """
     _ensure_table()
 
@@ -95,7 +103,7 @@ def list_analyses() -> list[dict]:
         with conn.cursor() as cur:
             cur.execute(
                 """
-                SELECT filename, analyzed_at
+                SELECT filename, analyzed_at, source_filename
                 FROM analysis_history
                 ORDER BY analyzed_at DESC
                 """
@@ -107,6 +115,7 @@ def list_analyses() -> list[dict]:
         {
             "filename": row[0],
             "analyzed_at": row[1].isoformat(),
+            "source_filename": row[2],
         }
         for row in rows
     ]
